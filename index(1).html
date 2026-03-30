@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FFForce — Carte des clubs de bras de fer</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #e8ecf5; }
+    body { font-family: 'Barlow', sans-serif; color: #1a2540; }
+
+    /* ── Layout ── */
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Header ── */
+    #header {
+      flex-shrink: 0;
+      background: #fff;
+      border-bottom: 3px solid #D42B2B;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+      padding: 0 20px;
+      height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      z-index: 1000;
+      position: relative;
+    }
+
+    .header-stripe {
+      width: 6px;
+      height: 36px;
+      border-radius: 3px;
+      background: linear-gradient(to bottom, #2B4EA8 33%, #fff 33%, #fff 66%, #D42B2B 66%);
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      color: #2B4EA8;
+      letter-spacing: 1px;
+      line-height: 1;
+    }
+    .logo-text span { color: #D42B2B; }
+
+    .header-sub {
+      font-size: 11px;
+      color: #999;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+    .badge-count {
+      background: #2B4EA8;
+      color: #fff;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 5px 13px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #666;
+      font-weight: 500;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+    }
+    .legend-dot.elite  { background: #2B4EA8; border-color: #1a3580; }
+    .legend-dot.pro    { background: #D42B2B; border-color: #a01c1c; }
+    .legend-dot.amateur{ background: #fff; border: 2px solid #2B4EA8; }
+
+    /* ── Map wrapper ── */
+    #map-wrap {
+      flex: 1;
+      position: relative;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Leaflet map ── */
+    #map {
+      flex: 1;
+      height: 100%;
+      transition: margin-right 0.35s cubic-bezier(0.4,0,0.2,1);
+    }
+    #map.panel-open { margin-right: 320px; }
+
+    /* Override Leaflet tile layer to match our palette */
+    .leaflet-tile { filter: saturate(0.7) hue-rotate(200deg) brightness(1.05); }
+
+    /* Custom marker styles */
+    .club-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      border: 2.5px solid transparent;
+      font-size: 14px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+      font-style: normal;
+    }
+    .club-icon:hover {
+      transform: scale(1.2);
+      box-shadow: 0 5px 16px rgba(0,0,0,0.32);
+    }
+    .club-icon.elite   { background: #2B4EA8; border-color: #1a3580; }
+    .club-icon.pro     { background: #D42B2B; border-color: #a01c1c; }
+    .club-icon.amateur { background: #fff;    border-color: #2B4EA8; }
+    .club-icon.active  { transform: scale(1.25); box-shadow: 0 0 0 4px rgba(43,78,168,0.28), 0 5px 16px rgba(0,0,0,0.3); }
+
+    /* pulse ring */
+    .club-icon::after {
+      content: '';
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: inherit;
+      opacity: 0.25;
+      animation: pulse 2.5s ease-in-out infinite;
+      z-index: -1;
+    }
+    @keyframes pulse {
+      0%,100% { transform: scale(1);   opacity: 0.25; }
+      50%      { transform: scale(1.7); opacity: 0; }
+    }
+
+    /* Logo inside marker */
+    .club-icon img {
+      width: 70%;
+      height: 70%;
+      object-fit: contain;
+      border-radius: 50%;
+    }
+
+    /* ── Side panel ── */
+    #panel {
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      width: 320px;
+      background: #fff;
+      border-left: 3px solid #D42B2B;
+      box-shadow: -4px 0 28px rgba(0,0,0,0.12);
+      transform: translateX(100%);
+      transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+      z-index: 900;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    #panel.open { transform: translateX(0); }
+
+    .panel-top-band {
+      height: 6px;
+      background: linear-gradient(to right, #2B4EA8 33%, #fff 33%, #fff 50%, #D42B2B 50%);
+      flex-shrink: 0;
+    }
+
+    #panel-body { padding: 22px 20px 32px; flex: 1; }
+
+    #btn-close {
+      position: absolute;
+      top: 14px; right: 14px;
+      background: #f0f2f7;
+      border: 1px solid #dde2f0;
+      color: #666;
+      width: 30px; height: 30px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 15px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+      line-height: 1;
+    }
+    #btn-close:hover { background: #D42B2B; color: #fff; border-color: #D42B2B; }
+
+    .p-logo {
+      width: 64px; height: 64px;
+      border: 2px solid #eef0f6;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 30px;
+      margin-bottom: 14px;
+      background: #f7f8fc;
+      overflow: hidden;
+    }
+    .p-logo img { width: 100%; height: 100%; object-fit: contain; }
+
+    .p-tag {
+      display: inline-block;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 3px 9px;
+      border-radius: 4px;
+      margin-bottom: 9px;
+    }
+    .p-tag.elite   { background: #dce9fb; color: #1a3d8a; border: 1px solid #2B4EA8; }
+    .p-tag.pro     { background: #fde8e8; color: #a01c1c; border: 1px solid #D42B2B; }
+    .p-tag.amateur { background: #f0f2f7; color: #444;    border: 1px solid #c8d0e8; }
+
+    .p-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      color: #1a2540;
+      line-height: 1.1;
+      margin-bottom: 4px;
+    }
+
+    .p-city { font-size: 13px; color: #999; margin-bottom: 18px; }
+
+    .p-divider { height: 1px; background: #eef0f6; margin: 14px 0; }
+
+    .p-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    .p-row-label { color: #aaa; }
+    .p-row-val   { color: #1a2540; font-weight: 500; }
+
+    .p-section {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #2B4EA8;
+      margin: 18px 0 8px;
+    }
+
+    .p-desc { font-size: 13px; color: #555; line-height: 1.75; }
+
+    .p-achievements { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+    .p-ach {
+      background: #f5f7fd;
+      border: 1px solid #dde2f0;
+      color: #444;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+
+    .p-contact { margin-top: 8px; font-size: 12px; color: #999; }
+    .p-contact a { color: #2B4EA8; text-decoration: none; font-weight: 500; }
+    .p-contact a:hover { text-decoration: underline; }
+
+    .p-website {
+      margin-top: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: #2B4EA8;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .p-website:hover { text-decoration: underline; }
+
+    .p-cta {
+      margin-top: 24px;
+      width: 100%;
+      padding: 12px;
+      background: #2B4EA8;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .p-cta:hover { background: #1a3580; }
+
+    /* ── Leaflet popup override (disabled, we use panel) ── */
+    .leaflet-popup { display: none !important; }
+
+    /* ── Zoom control style ── */
+    .leaflet-control-zoom a {
+      font-family: 'Barlow Condensed', sans-serif !important;
+      font-weight: 700 !important;
+      color: #2B4EA8 !important;
+    }
+    .leaflet-control-zoom a:hover { background: #2B4EA8 !important; color: #fff !important; }
+
+    /* ── Attribution ── */
+    .leaflet-control-attribution {
+      font-size: 10px;
+      background: rgba(255,255,255,0.85) !important;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .legend, .header-sub { display: none; }
+      #panel { width: 100%; }
+      #map.panel-open { margin-right: 0; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header id="header">
+    <div class="header-stripe"></div>
+    <div>
+      <div class="logo-text">FF<span>FORCE</span></div>
+      <div class="header-sub">Carte des clubs · Bras de fer</div>
+    </div>
+    <div class="header-right">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot elite"></div>Élite</div>
+        <div class="legend-item"><div class="legend-dot pro"></div>Pro</div>
+        <div class="legend-item"><div class="legend-dot amateur"></div>Amateur</div>
+      </div>
+      <div class="badge-count" id="badge-count">— clubs</div>
+    </div>
+  </header>
+
+  <!-- MAP + PANEL -->
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <!-- SIDE PANEL -->
+    <div id="panel">
+      <div class="panel-top-band"></div>
+      <button id="btn-close" onclick="closePanel()" title="Fermer">✕</button>
+      <div id="panel-body"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Init map ──────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [46.6, 2.3],
+  zoom: 6,
+  zoomControl: true,
+  attributionControl: true,
+  minZoom: 5,
+  maxZoom: 13,
+});
+
+// Tiles CartoDB Positron — minimaliste, clair, parfait pour overlay de données
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://carto.com/">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  subdomains: 'abcd',
+  maxZoom: 19,
+}).addTo(map);
+
+// ── Variables ────────────────────────────────────────────────
+let markers = [];
+let activeMarkerId = null;
+
+// ── Load clubs ───────────────────────────────────────────────
+fetch('clubs.json')
+  .then(r => r.json())
+  .then(clubs => {
+    document.getElementById('badge-count').textContent = clubs.length + ' clubs';
+    clubs.forEach(club => addMarker(club));
+  })
+  .catch(err => console.error('Erreur chargement clubs.json:', err));
+
+// ── Create marker ─────────────────────────────────────────────
+function addMarker(club) {
+  const cat = club.category.toLowerCase();
+
+  // Taille selon zoom (mise à jour dynamiquement)
+  function getSize() {
+    const z = map.getZoom();
+    if (z <= 6)  return 28;
+    if (z <= 8)  return 34;
+    if (z <= 10) return 40;
+    return 46;
+  }
+
+  function makeIcon(active) {
+    const s = getSize();
+    const inner = club.logo
+      ? `<img src="${club.logo}" alt="${club.name}" />`
+      : `<span style="pointer-events:none">${club.emoji}</span>`;
+    return L.divIcon({
+      className: '',
+      html: `<div class="club-icon ${cat}${active ? ' active' : ''}" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.5)}px;position:relative;">${inner}</div>`,
+      iconSize: [s, s],
+      iconAnchor: [s/2, s/2],
+    });
+  }
+
+  const marker = L.marker([club.lat, club.lng], { icon: makeIcon(false) });
+  marker.clubData = club;
+
+  marker.on('click', () => {
+    openPanel(club, marker);
+  });
+
+  // Update size on zoom
+  map.on('zoomend', () => {
+    marker.setIcon(makeIcon(activeMarkerId === club.id));
+  });
+
+  marker.addTo(map);
+  markers.push({ id: club.id, marker, club });
+}
+
+// ── Panel ─────────────────────────────────────────────────────
+function openPanel(club, clickedMarker) {
+  // Reset previous active marker
+  if (activeMarkerId !== null) {
+    const prev = markers.find(m => m.id === activeMarkerId);
+    if (prev) {
+      const cat = prev.club.category.toLowerCase();
+      const s = getZoomSize();
+      const inner = prev.club.logo
+        ? `<img src="${prev.club.logo}" alt="${prev.club.name}" />`
+        : `<span style="pointer-events:none">${prev.club.emoji}</span>`;
+      prev.marker.setIcon(L.divIcon({
+        className: '',
+        html: `<div class="club-icon ${cat}" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.5)}px;position:relative;">${inner}</div>`,
+        iconSize: [s, s], iconAnchor: [s/2, s/2],
+      }));
+    }
+  }
+
+  activeMarkerId = club.id;
+
+  // Set active style on clicked marker
+  const cat = club.category.toLowerCase();
+  const s = getZoomSize();
+  const inner = club.logo
+    ? `<img src="${club.logo}" alt="${club.name}" />`
+    : `<span style="pointer-events:none">${club.emoji}</span>`;
+  clickedMarker.setIcon(L.divIcon({
+    className: '',
+    html: `<div class="club-icon ${cat} active" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.5)}px;position:relative;">${inner}</div>`,
+    iconSize: [s, s], iconAnchor: [s/2, s/2],
+  }));
+
+  // Build panel HTML
+  const tagClass = cat;
+  const websiteHTML = club.website
+    ? `<a class="p-website" href="${club.website}" target="_blank">🌐 ${club.website.replace('https://','')}</a>`
+    : '';
+  const contactHTML = club.contact
+    ? `<div class="p-contact">✉️ <a href="mailto:${club.contact}">${club.contact}</a></div>`
+    : '';
+  const achievementsHTML = club.achievements.length
+    ? `<div class="p-section">Palmarès</div>
+       <div class="p-achievements">${club.achievements.map(a => `<span class="p-ach">🏆 ${a}</span>`).join('')}</div>`
+    : '';
+
+  const logoHTML = club.logo
+    ? `<div class="p-logo"><img src="${club.logo}" alt="${club.name}" /></div>`
+    : `<div class="p-logo">${club.emoji}</div>`;
+
+  document.getElementById('panel-body').innerHTML = `
+    ${logoHTML}
+    <span class="p-tag ${tagClass}">${club.category}</span>
+    <div class="p-name">${club.name}</div>
+    <div class="p-city">📍 ${club.city} · ${club.region}</div>
+
+    <div class="p-divider"></div>
+
+    <div class="p-row"><span class="p-row-label">Membres actifs</span><span class="p-row-val">${club.members}</span></div>
+    <div class="p-row"><span class="p-row-label">Fondé en</span><span class="p-row-val">${club.founded}</span></div>
+    <div class="p-row"><span class="p-row-label">Adresse</span><span class="p-row-val" style="text-align:right;max-width:180px">${club.address}</span></div>
+
+    <div class="p-divider"></div>
+
+    <div class="p-section">À propos</div>
+    <div class="p-desc">${club.description}</div>
+
+    ${achievementsHTML}
+
+    ${contactHTML}
+    ${websiteHTML}
+
+    <button class="p-cta" onclick="window.open('https://maps.google.com/?q=${encodeURIComponent(club.address)}', '_blank')">
+      Voir sur Google Maps ↗
+    </button>
+  `;
+
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('map').classList.add('panel-open');
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('map').classList.remove('panel-open');
+
+  if (activeMarkerId !== null) {
+    const prev = markers.find(m => m.id === activeMarkerId);
+    if (prev) {
+      const cat = prev.club.category.toLowerCase();
+      const s = getZoomSize();
+      const inner = prev.club.logo
+        ? `<img src="${prev.club.logo}" alt="${prev.club.name}" />`
+        : `<span style="pointer-events:none">${prev.club.emoji}</span>`;
+      prev.marker.setIcon(L.divIcon({
+        className: '',
+        html: `<div class="club-icon ${cat}" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.5)}px;position:relative;">${inner}</div>`,
+        iconSize: [s, s], iconAnchor: [s/2, s/2],
+      }));
+    }
+    activeMarkerId = null;
+  }
+}
+
+function getZoomSize() {
+  const z = map.getZoom();
+  if (z <= 6)  return 28;
+  if (z <= 8)  return 34;
+  if (z <= 10) return 40;
+  return 46;
+}
+
+// Close panel clicking on map
+map.on('click', closePanel);
+</script>
+</body>
+</html>
